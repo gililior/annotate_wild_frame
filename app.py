@@ -144,11 +144,12 @@ ann_df = load_annotations_df(sheet)
 
 # --- Progress bar ---
 done, total = get_user_progress(df, ann_df, annotator_id)
+total = min(total, 100)
 progress = done / total if total > 0 else 0
 
 st.markdown(f"**Annotator ID:** `{annotator_id}`")
 st.progress(progress)
-st.caption(f"You have annotated {done} out of {total} sentences.")
+st.caption(f"You have annotated {done}.")
 
 # --- Select next sentence ---
 if "current_sentence_id" not in st.session_state:
