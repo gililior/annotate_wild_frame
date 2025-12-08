@@ -16,6 +16,24 @@ st.set_page_config(
     layout="centered",
 )
 
+# Global CSS for larger fonts
+st.markdown(
+    """
+    <style>
+    .sentence-text {
+        font-size: 1.4rem;
+        font-weight: 500;
+        line-height: 1.6;
+    }
+    /* Make radio labels bigger */
+    div.stRadio > div[role='radiogroup'] label {
+        font-size: 1.2rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ---------------- HELPERS ----------------
 @st.cache_data
 def load_data(path: str = DATA_PATH) -> pd.DataFrame:
@@ -96,6 +114,9 @@ def choose_new_sentence_id():
     ann_df = load_annotations_df(sheet)
     next_id = get_next_sentence_id(data_df, ann_df, st.session_state.annotator_id)
     st.session_state.current_sentence_id = next_id
+    # Reset the radio selection whenever a new sentence is chosen
+    if "sentiment_choice" in st.session_state:
+        del st.session_state["sentiment_choice"]
 
 
 def get_user_progress(data_df: pd.DataFrame, annotations_df: pd.DataFrame, annotator_id: str):
@@ -112,7 +133,6 @@ def get_label_order_for_user(annotator_id: str):
     We use a deterministic hash of annotator_id so it's stable per user
     but different across users.
     """
-    # simple deterministic "random" choice from annotator_id
     h = hash(annotator_id)
     if h % 2 == 0:
         return ["Positive", "Negative"]
@@ -140,8 +160,11 @@ if "annotator_id" not in st.session_state:
             st.warning("Please enter a valid annotator ID before starting.")
             st.stop()
         st.session_state.annotator_id = name.strip()
-        # also decide label order for this user once here
+        # decide label order for this user once here
         st.session_state.label_order = get_label_order_for_user(st.session_state.annotator_id)
+        # also ensure no leftover radio state
+        if "sentiment_choice" in st.session_state:
+            del st.session_state["sentiment_choice"]
         st.rerun()
     else:
         st.stop()
@@ -207,12 +230,12 @@ Your job is to annotate what is the **primary sentiment** that is reflected from
 )
 
 st.markdown("### Sentence")
-st.markdown(f"**Sentence ID:** `{current_id}`")
-st.write(sentence_text)
+st.markdown(
+    f"<div class='sentence-text'>{sentence_text}</div>",
+    unsafe_allow_html=True,
+)
 
-st.markdown("### Your annotation")
-
-# Radio with no default selection:
+# --- Annotation (no title, bigger fonts already via CSS) ---
 label = st.radio(
     "Overall, what is the **primary sentiment** of this sentence?",
     options=st.session_state.label_order,
@@ -233,6 +256,6 @@ if submitted:
 
     st.success("Annotation saved. Thank you! 🙌")
 
-    # Pick a new sentence and rerun
+    # Pick a new sentence, reset radio selection, and rerun
     choose_new_sentence_id()
     st.rerun()
