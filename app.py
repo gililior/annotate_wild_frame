@@ -142,7 +142,7 @@ if "annotator_id" not in st.session_state:
         st.session_state.annotator_id = name.strip()
         # also decide label order for this user once here
         st.session_state.label_order = get_label_order_for_user(st.session_state.annotator_id)
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.stop()
 
@@ -235,4 +235,4 @@ if submitted:
 
     # Pick a new sentence and rerun
     choose_new_sentence_id()
-    st.experimental_rerun()
+    st.rerun()
