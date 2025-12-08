@@ -16,7 +16,6 @@ st.set_page_config(
     layout="centered",
 )
 
-
 # ---------------- HELPERS ----------------
 @st.cache_data
 def load_data(path: str = DATA_PATH) -> pd.DataFrame:
@@ -34,11 +33,12 @@ def get_sheet():
     """
     Connect to Google Sheets using service account info from Streamlit secrets.
 
-    You must define in .streamlit/secrets.toml:
-      [gcp_service_account]
-      ... (full JSON from service account) ...
+    In .streamlit/secrets.toml (or Streamlit Cloud secrets) you must define:
 
       GSPREAD_SHEET_ID = "your_google_sheet_id"
+
+      [gcp_service_account]
+      ... full JSON from the service account key ...
     """
     creds_info = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_info, scopes=SHEET_SCOPE)
@@ -46,8 +46,7 @@ def get_sheet():
 
     sheet_id = st.secrets["GSPREAD_SHEET_ID"]
     sh = client.open_by_key(sheet_id)
-    # We'll use the first worksheet in the spreadsheet
-    return sh.sheet1
+    return sh.sheet1  # first worksheet
 
 
 def load_annotations_df(sheet) -> pd.DataFrame:
@@ -60,7 +59,6 @@ def load_annotations_df(sheet) -> pd.DataFrame:
     if not records:
         return pd.DataFrame(columns=["annotator_id", "sentence_id", "label", "timestamp"])
     df = pd.DataFrame(records)
-    # Ensure sentence_id is string or int consistently
     if "sentence_id" in df.columns:
         df["sentence_id"] = df["sentence_id"].astype(str)
     return df
@@ -73,14 +71,14 @@ def append_annotation(sheet, annotator_id: str, sentence_id, label: str):
     sheet.append_row(row)
 
 
-def get_next_sentence_id(data_df: pd.DataFrame, annotations_df: pd.DataFrame, annotator_id: str):
-    """
-    Return a random sentence_id that this annotator has not yet annotated.
-    """
-    # All sentence IDs in data
+def get_next_sentence_id(
+    data_df: pd.DataFrame,
+    annotations_df: pd.DataFrame,
+    annotator_id: str
+):
+    """Return a random sentence_id that this annotator has not yet annotated."""
     all_ids = set(data_df["sentence_id"].astype(str).tolist())
 
-    # Sentence_ids already annotated by this annotator
     user_ann = annotations_df[annotations_df["annotator_id"] == annotator_id]
     already_done = set(user_ann["sentence_id"].astype(str).tolist())
 
@@ -92,7 +90,7 @@ def get_next_sentence_id(data_df: pd.DataFrame, annotations_df: pd.DataFrame, an
 
 
 def choose_new_sentence_id():
-    """Helper to update session_state with a new sentence id or None."""
+    """Update session_state.current_sentence_id with a new unseen id or None."""
     sheet = get_sheet()
     data_df = load_data()
     ann_df = load_annotations_df(sheet)
@@ -100,33 +98,62 @@ def choose_new_sentence_id():
     st.session_state.current_sentence_id = next_id
 
 
-# ---------------- UI ----------------
-st.title("📝 Framing Sentiment Annotation")
+def get_user_progress(data_df: pd.DataFrame, annotations_df: pd.DataFrame, annotator_id: str):
+    """Return (num_annotated_by_user, total_sentences)."""
+    total = len(data_df)
+    user_ann = annotations_df[annotations_df["annotator_id"] == annotator_id]
+    done = len(user_ann)
+    return done, total
 
-st.write(
+
+def get_label_order_for_user(annotator_id: str):
     """
-You will see sentences and be asked to choose whether the **primary sentiment** 
-of the sentence is **more positive** or **more negative**.
-"""
-)
+    Decide once per user whether Positive or Negative appears first.
+    We use a deterministic hash of annotator_id so it's stable per user
+    but different across users.
+    """
+    # simple deterministic "random" choice from annotator_id
+    h = hash(annotator_id)
+    if h % 2 == 0:
+        return ["Positive", "Negative"]
+    else:
+        return ["Negative", "Positive"]
 
-# --- Annotator ID ---
-st.markdown("#### Step 1: Identify yourself")
 
-annotator_id = st.text_input(
-    "Enter a unique annotator ID (e.g., your email or nickname):",
-    help="Use the same ID every time you come back so you won't see the same sentences again.",
-)
+# ---------------- UI FLOW ----------------
 
-if not annotator_id:
-    st.warning("Please enter your annotator ID to start annotating.")
-    st.stop()
-
-# store annotator ID in session state
+# --- Step 0: Name / ID page ---
 if "annotator_id" not in st.session_state:
-    st.session_state.annotator_id = annotator_id
-else:
-    st.session_state.annotator_id = annotator_id  # keep updated if they change it
+    st.title("📝 Framing Sentiment Annotation")
+
+    st.markdown("### Step 1: Identify yourself")
+
+    name = st.text_input(
+        "Enter a unique annotator ID (e.g., your name, email or nickname):",
+        help="Use the same ID every time you come back so you won't see the same sentences again."
+    )
+
+    start = st.button("Start annotating ➡️")
+
+    if start:
+        if not name.strip():
+            st.warning("Please enter a valid annotator ID before starting.")
+            st.stop()
+        st.session_state.annotator_id = name.strip()
+        # also decide label order for this user once here
+        st.session_state.label_order = get_label_order_for_user(st.session_state.annotator_id)
+        st.experimental_rerun()
+    else:
+        st.stop()
+
+# If we are here, annotator_id already set, and we are on the "main page"
+annotator_id = st.session_state.annotator_id
+
+# ensure label_order exists (for safety if reload)
+if "label_order" not in st.session_state:
+    st.session_state.label_order = get_label_order_for_user(annotator_id)
+
+st.title("📝 Framing Sentiment Annotation")
 
 # --- Load data + sheet ---
 try:
@@ -141,6 +168,17 @@ except Exception as e:
     st.error(f"Error connecting to Google Sheets: {e}")
     st.stop()
 
+# Load annotations for progress and selection
+ann_df = load_annotations_df(sheet)
+
+# --- Progress bar ---
+done, total = get_user_progress(df, ann_df, annotator_id)
+progress = done / total if total > 0 else 0.0
+
+st.markdown(f"**Annotator ID:** `{annotator_id}`")
+st.progress(progress)
+st.caption(f"You have annotated {done} out of {total} sentences.")
+
 # --- Initialize current sentence in session_state ---
 if "current_sentence_id" not in st.session_state:
     choose_new_sentence_id()
@@ -151,7 +189,7 @@ if current_id is None:
     st.success("🎉 You have annotated all available sentences. Thank you!")
     st.stop()
 
-# Get the row for the current sentence
+# Get current sentence
 row = df.loc[df["sentence_id"].astype(str) == str(current_id)]
 if row.empty:
     st.error("Could not find the selected sentence in the dataset.")
@@ -159,56 +197,42 @@ if row.empty:
 
 sentence_text = row["opposite_framing_sentence"].iloc[0]
 
-st.markdown("---")
-st.markdown("### Step 2: Annotate the sentence")
-
-st.markdown(f"**Sentence ID:** `{current_id}`")
-st.write(f"**Sentence:** {sentence_text}")
-
-label = st.radio(
-    "Overall, what is the **primary sentiment** of this sentence?",
-    options=["Positive", "Negative"],
-    index=0,
-    help="Choose the main sentiment. Don't overthink edge cases – pick the dominant tone.",
+# --- Instructions + sentence ---
+st.markdown("### Instructions")
+st.write(
+    """
+You will be provided with a sentence.  
+Your job is to annotate what is the **primary sentiment** that is reflected from the sentence.
+"""
 )
 
-col1, col2 = st.columns(2)
+st.markdown("### Sentence")
+st.markdown(f"**Sentence ID:** `{current_id}`")
+st.write(sentence_text)
 
-with col1:
-    submitted = st.button("Submit annotation ✅")
+st.markdown("### Your annotation")
 
-with col2:
-    skipped = st.button("Skip this sentence ⏭️")
+# Radio with no default selection:
+label = st.radio(
+    "Overall, what is the **primary sentiment** of this sentence?",
+    options=st.session_state.label_order,
+    index=None,  # no default
+    key="sentiment_choice",
+    help="Choose the main sentiment expressed in the sentence."
+)
+
+submitted = st.button("Submit annotation ✅")
 
 if submitted:
+    if label is None:
+        st.warning("Please choose a sentiment before submitting.")
+        st.stop()
+
+    # Save annotation with the logical label name ("Positive" / "Negative")
     append_annotation(sheet, annotator_id, current_id, label)
+
     st.success("Annotation saved. Thank you! 🙌")
 
-    # pick a new sentence and rerun
+    # Pick a new sentence and rerun
     choose_new_sentence_id()
-    st.rerun()
-
-elif skipped:
-    st.info("Sentence skipped. Showing a new one.")
-    choose_new_sentence_id()
-    st.rerun()
-
-# --- Optional: view/download all annotations ---
-st.markdown("---")
-st.markdown("### Step 3 (optional): View / download annotations")
-
-if st.checkbox("Show all annotations (may be slow if many rows)"):
-    ann_df = load_annotations_df(sheet)
-    if ann_df.empty:
-        st.info("No annotations yet.")
-    else:
-        st.write("Showing the last 50 annotations:")
-        st.dataframe(ann_df.tail(50))
-
-        csv_bytes = ann_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="Download all annotations as CSV",
-            data=csv_bytes,
-            file_name="annotations_export.csv",
-            mime="text/csv",
-        )
+    st.experimental_rerun()
