@@ -114,9 +114,6 @@ def choose_new_sentence_id():
     ann_df = load_annotations_df(sheet)
     next_id = get_next_sentence_id(data_df, ann_df, st.session_state.annotator_id)
     st.session_state.current_sentence_id = next_id
-    # Reset the radio selection whenever a new sentence is chosen
-    if "sentiment_choice" in st.session_state:
-        del st.session_state["sentiment_choice"]
 
 
 def get_user_progress(data_df: pd.DataFrame, annotations_df: pd.DataFrame, annotator_id: str):
@@ -127,17 +124,9 @@ def get_user_progress(data_df: pd.DataFrame, annotations_df: pd.DataFrame, annot
     return done, total
 
 
-def get_label_order_for_user(annotator_id: str):
-    """
-    Decide once per user whether Positive or Negative appears first.
-    We use a deterministic hash of annotator_id so it's stable per user
-    but different across users.
-    """
-    h = hash(annotator_id)
-    if h % 2 == 0:
-        return ["Positive", "Negative"]
-    else:
-        return ["Negative", "Positive"]
+def assign_random_label_order():
+    """Randomize whether Positive or Negative appears first for this user."""
+    return random.sample(["Positive", "Negative"], k=2)
 
 
 # ---------------- UI FLOW ----------------
@@ -160,11 +149,8 @@ if "annotator_id" not in st.session_state:
             st.warning("Please enter a valid annotator ID before starting.")
             st.stop()
         st.session_state.annotator_id = name.strip()
-        # decide label order for this user once here
-        st.session_state.label_order = get_label_order_for_user(st.session_state.annotator_id)
-        # also ensure no leftover radio state
-        if "sentiment_choice" in st.session_state:
-            del st.session_state["sentiment_choice"]
+        # decide random label order for this user once here
+        st.session_state.label_order = assign_random_label_order()
         st.rerun()
     else:
         st.stop()
@@ -174,7 +160,7 @@ annotator_id = st.session_state.annotator_id
 
 # ensure label_order exists (for safety if reload)
 if "label_order" not in st.session_state:
-    st.session_state.label_order = get_label_order_for_user(annotator_id)
+    st.session_state.label_order = assign_random_label_order()
 
 st.title("📝 Framing Sentiment Annotation")
 
@@ -235,12 +221,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Annotation (no title, bigger fonts already via CSS) ---
+# --- Annotation (no extra title, bigger fonts via CSS) ---
 label = st.radio(
     "Overall, what is the **primary sentiment** of this sentence?",
     options=st.session_state.label_order,
-    index=None,  # no default
-    key="sentiment_choice",
+    index=None,  # no default selection
+    key=f"sentiment_choice_{current_id}",  # fresh widget per sentence
     help="Choose the main sentiment expressed in the sentence."
 )
 
@@ -256,6 +242,6 @@ if submitted:
 
     st.success("Annotation saved. Thank you! 🙌")
 
-    # Pick a new sentence, reset radio selection, and rerun
+    # Pick a new sentence and rerun
     choose_new_sentence_id()
     st.rerun()
