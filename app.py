@@ -11,7 +11,7 @@ DATA_PATH = "framed_eval.csv"  # your dataset
 SHEET_SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
 
 st.set_page_config(
-    page_title="Framing Sentiment Annotation",
+    page_title="Sentiment Annotation",
     page_icon="📝",
     layout="centered",
 )
