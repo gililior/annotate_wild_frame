@@ -133,7 +133,7 @@ def assign_random_label_order():
 
 # --- Step 0: Name / ID page ---
 if "annotator_id" not in st.session_state:
-    st.title("📝 Framing Sentiment Annotation")
+    st.title("📝 Sentiment Annotation")
 
     st.markdown("### Step 1: Identify yourself")
 
@@ -162,7 +162,7 @@ annotator_id = st.session_state.annotator_id
 if "label_order" not in st.session_state:
     st.session_state.label_order = assign_random_label_order()
 
-st.title("📝 Framing Sentiment Annotation")
+st.title("📝 Sentiment Annotation")
 
 # --- Load data + sheet ---
 try:
