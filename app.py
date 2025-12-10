@@ -149,7 +149,7 @@ progress = done / total if total > 0 else 0
 
 st.markdown(f"**Annotator ID:** `{annotator_id}`")
 st.progress(progress)
-st.caption(f"You have annotated {done}.")
+st.caption(f"You have annotated {done} sentences.")
 
 # --- Select next sentence ---
 if "current_sentence_id" not in st.session_state:
